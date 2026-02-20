@@ -1,0 +1,11 @@
+[Unit]
+Description=Host self‑heal checks (GPU/Docker runtime)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/srv/ops/gcloudOps/scripts/host-selfheal.sh
+
+[Install]
+WantedBy=multi-user.target

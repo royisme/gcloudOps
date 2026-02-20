@@ -1,0 +1,4 @@
+- Purpose: Host-level scripts for GCP-like GPU VM bootstrap and self-heal, especially directory layout, GPU driver, Docker, NVIDIA container toolkit.
+- Stack: Bash scripts + systemd unit on Debian/Ubuntu hosts.
+- Structure: `install.sh`, `scripts/host-layout-init.sh`, `scripts/host-bootstrap.sh`, `scripts/host-selfheal.sh`, `scripts/systemd/host-selfheal.service`, `README.md`.
+- Runtime model: install initializes layout and service; bootstrap installs heavy dependencies; selfheal runs at boot.
