@@ -61,6 +61,12 @@ You can switch modes by editing `/etc/hostops/features.env`.
 - Generic Docker app (non-AI): keep `ENABLE_GPU=false`.
 - AI/GPU workload: set `ENABLE_GPU=true`, then rerun bootstrap.
 
+Quick diagnostics:
+```bash
+sudo bash /srv/ops/gcloudOps/scripts/host-features-doctor.sh
+```
+This prints effective feature flags, key runtime status, and suggested next steps.
+
 ## Execution Flow
 
 1. `install.sh`
