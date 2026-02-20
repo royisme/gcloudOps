@@ -55,6 +55,7 @@ ENABLE_GPU=false
 Meaning:
 - `ENABLE_DOCKER=true`: manage and verify Docker runtime.
 - `ENABLE_GPU=true`: install/check NVIDIA stack and run GPU probe.
+- `ENABLE_SERVICE_HOOKS=true`: execute service-level hooks during self-heal.
 
 You can switch modes by editing `/etc/hostops/features.env`.
 
@@ -66,6 +67,34 @@ Quick diagnostics:
 sudo bash /srv/ops/gcloudOps/scripts/host-features-doctor.sh
 ```
 This prints effective feature flags, key runtime status, and suggested next steps.
+
+## Service Self-Heal Extension
+
+You can plug service-specific self-heal scripts into the host self-heal pipeline.
+
+Directory contract:
+- Put scripts under `/srv/ops/gcloudOps/services-enabled`
+- File name must match `*.sh`
+- Script must be executable
+- Script must be idempotent
+
+Execution model:
+- Called from `host-selfheal.sh` after host checks
+- Runs in lexical file order
+- Per-hook timeout: `SERVICE_HOOK_TIMEOUT_SEC` (default `300`)
+- Failure mode:
+  - `SERVICE_HOOK_FAIL_MODE=continue` (default): log failure and continue
+  - `SERVICE_HOOK_FAIL_MODE=strict`: fail entire self-heal run
+
+Example:
+```bash
+cat >/srv/ops/gcloudOps/services-enabled/20-myapp.sh <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+systemctl enable --now myapp.service
+EOF
+chmod +x /srv/ops/gcloudOps/services-enabled/20-myapp.sh
+```
 
 ## Execution Flow
 

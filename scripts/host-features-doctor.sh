@@ -8,6 +8,10 @@ set -euo pipefail
 FEATURE_FILE="/etc/hostops/features.env"
 DEFAULT_ENABLE_DOCKER="true"
 DEFAULT_ENABLE_GPU="false"
+DEFAULT_ENABLE_SERVICE_HOOKS="true"
+DEFAULT_SERVICE_HOOKS_DIR="/srv/ops/gcloudOps/services-enabled"
+DEFAULT_SERVICE_HOOK_TIMEOUT_SEC="300"
+DEFAULT_SERVICE_HOOK_FAIL_MODE="continue"
 
 normalize_bool() {
   local raw="${1:-}"
@@ -27,6 +31,10 @@ print_kv() {
 
 ENABLE_DOCKER_RAW="$DEFAULT_ENABLE_DOCKER"
 ENABLE_GPU_RAW="$DEFAULT_ENABLE_GPU"
+ENABLE_SERVICE_HOOKS_RAW="$DEFAULT_ENABLE_SERVICE_HOOKS"
+SERVICE_HOOKS_DIR_RAW="$DEFAULT_SERVICE_HOOKS_DIR"
+SERVICE_HOOK_TIMEOUT_SEC_RAW="$DEFAULT_SERVICE_HOOK_TIMEOUT_SEC"
+SERVICE_HOOK_FAIL_MODE_RAW="$DEFAULT_SERVICE_HOOK_FAIL_MODE"
 
 if [ -f "$FEATURE_FILE" ]; then
   # shellcheck disable=SC1090
@@ -35,12 +43,20 @@ fi
 
 ENABLE_DOCKER_EFFECTIVE="$(normalize_bool "${ENABLE_DOCKER:-$ENABLE_DOCKER_RAW}" "$DEFAULT_ENABLE_DOCKER")"
 ENABLE_GPU_EFFECTIVE="$(normalize_bool "${ENABLE_GPU:-$ENABLE_GPU_RAW}" "$DEFAULT_ENABLE_GPU")"
+ENABLE_SERVICE_HOOKS_EFFECTIVE="$(normalize_bool "${ENABLE_SERVICE_HOOKS:-$ENABLE_SERVICE_HOOKS_RAW}" "$DEFAULT_ENABLE_SERVICE_HOOKS")"
+SERVICE_HOOKS_DIR_EFFECTIVE="${SERVICE_HOOKS_DIR:-$SERVICE_HOOKS_DIR_RAW}"
+SERVICE_HOOK_TIMEOUT_SEC_EFFECTIVE="${SERVICE_HOOK_TIMEOUT_SEC:-$SERVICE_HOOK_TIMEOUT_SEC_RAW}"
+SERVICE_HOOK_FAIL_MODE_EFFECTIVE="${SERVICE_HOOK_FAIL_MODE:-$SERVICE_HOOK_FAIL_MODE_RAW}"
 
 echo "== gcloudOps Feature Doctor =="
 print_kv "Feature file" "$FEATURE_FILE"
 print_kv "Feature file exists" "$([ -f "$FEATURE_FILE" ] && echo yes || echo no)"
 print_kv "ENABLE_DOCKER (effective)" "$ENABLE_DOCKER_EFFECTIVE"
 print_kv "ENABLE_GPU (effective)" "$ENABLE_GPU_EFFECTIVE"
+print_kv "ENABLE_SERVICE_HOOKS (effective)" "$ENABLE_SERVICE_HOOKS_EFFECTIVE"
+print_kv "SERVICE_HOOKS_DIR" "$SERVICE_HOOKS_DIR_EFFECTIVE"
+print_kv "SERVICE_HOOK_TIMEOUT_SEC" "$SERVICE_HOOK_TIMEOUT_SEC_EFFECTIVE"
+print_kv "SERVICE_HOOK_FAIL_MODE" "$SERVICE_HOOK_FAIL_MODE_EFFECTIVE"
 echo
 
 echo "== Runtime Checks =="
@@ -69,6 +85,18 @@ if dpkg-query -W -f='${Status}\n' nvidia-container-toolkit 2>/dev/null | grep -q
   print_kv "nvidia-container-toolkit" "installed"
 else
   print_kv "nvidia-container-toolkit" "not installed"
+fi
+
+if [ "$ENABLE_SERVICE_HOOKS_EFFECTIVE" = "true" ]; then
+  if [ -d "$SERVICE_HOOKS_DIR_EFFECTIVE" ]; then
+    HOOK_COUNT="$(find "$SERVICE_HOOKS_DIR_EFFECTIVE" -maxdepth 1 -type f -name '*.sh' | wc -l | tr -d ' ')"
+    print_kv "service hooks directory" "present"
+    print_kv "service hooks (*.sh)" "$HOOK_COUNT"
+  else
+    print_kv "service hooks directory" "missing"
+  fi
+else
+  print_kv "service hooks" "disabled"
 fi
 echo
 
