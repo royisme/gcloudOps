@@ -105,7 +105,11 @@ chmod +x /srv/ops/gcloudOps/services-enabled/20-myapp.sh
 ## Execution Flow
 
 1. `install.sh`
-- Syncs this repository to `/srv/ops/gcloudOps`.
+- Converges `/srv/ops/gcloudOps` to target version.
+  - `GCLOUDOPS_INSTALL_MODE=auto` (default): prefer git update when remote URL is available; fallback to local sync.
+  - `GCLOUDOPS_INSTALL_MODE=git`: clone/pull with git (with dirty-worktree protection).
+  - `GCLOUDOPS_INSTALL_MODE=local`: sync from local source directory.
+- Supports version pin with `GCLOUDOPS_REF` (branch/tag/commit), default `main`.
 - Initializes host layout/groups.
 - Initializes feature flags file (if missing).
 - Installs and enables `host-selfheal.service`.
@@ -147,6 +151,11 @@ sudo bash "$tmpdir/gcloudOps/install.sh"
 sudo bash /srv/ops/gcloudOps/scripts/host-bootstrap.sh
 ```
 
+Pin to a tag/commit when needed:
+```bash
+sudo GCLOUDOPS_INSTALL_MODE=git GCLOUDOPS_REPO_URL=<REPO_URL> GCLOUDOPS_REF=v1.0.0 bash /srv/ops/gcloudOps/install.sh
+```
+
 ## Spot/Preemptible Recovery Playbook
 
 After a VM is reclaimed and a new instance boots with the same disk:
@@ -177,6 +186,7 @@ bash -n scripts/host-selfheal.sh
 ### 2026-02-20
 
 - Added idempotent repo sync behavior in `install.sh` when `/srv/ops/gcloudOps` already exists.
+- Upgraded `install.sh` to support git converge mode (`clone/pull --ff-only`) with ref pin and dirty-worktree protection.
 - Hardened bootstrap repository/keyring writes to be safe on repeated runs.
 - Fixed NVIDIA toolkit detection using `dpkg-query` (removed false negatives from regex mismatch).
 - Introduced feature flags for generic vs GPU hosts:
