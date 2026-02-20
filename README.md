@@ -187,7 +187,7 @@ bash -n scripts/host-selfheal.sh
 - Added `scripts/host-features-doctor.sh` for quick on-host diagnostics and next-step hints.
 - Added `scripts/new-service-hook.sh` scaffold for service self-heal hook generation.
 - Added repository-level `AGENTS.md` guidance for coding agents (Codex/Claude Code).
-- Completed live validation on VM `instance-20260220-062618`:
+- Completed live validation on VM `instance-xxx`:
   - Generic mode (`ENABLE_GPU=false`) self-heal passes.
   - GPU mode (`ENABLE_GPU=true`) bootstrap + self-heal pass.
 
