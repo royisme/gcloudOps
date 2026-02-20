@@ -1,6 +1,6 @@
 # gcloudOps
 
-`gcloudOps` is a practical, idempotent host-ops toolkit for GPU VMs on GCP (or similar environments), built for preemptible/spot-style lifecycle events.
+`gcloudOps` is a practical, idempotent host-ops toolkit for VM workloads on GCP (or similar environments), built for preemptible/spot-style lifecycle events.
 
 When a VM is reclaimed but the boot disk persists, these scripts help the next VM instance recover quickly and consistently without manual repair.
 
@@ -17,7 +17,7 @@ This repository focuses on reliable host recovery with repeatable scripts and si
 ## What It Does
 
 - Initializes a stable host directory and permission layout.
-- Installs GPU/Docker runtime dependencies (only when missing).
+- Installs runtime dependencies (only when missing), with optional GPU support.
 - Runs a boot-time self-heal check through systemd.
 - Supports safe re-runs after VM reclaim/restart events.
 
@@ -35,28 +35,48 @@ This repository focuses on reliable host recovery with repeatable scripts and si
 ├── install.sh
 ├── scripts
 │   ├── host-layout-init.sh
+│   ├── host-features.env.example
 │   ├── host-bootstrap.sh
 │   ├── host-selfheal.sh
 │   └── systemd/host-selfheal.service
 └── README.md
 ```
 
+## Feature Flags (Core vs GPU)
+
+`install.sh` creates `/etc/hostops/features.env` on first run (if missing).
+
+Default:
+```bash
+ENABLE_DOCKER=true
+ENABLE_GPU=false
+```
+
+Meaning:
+- `ENABLE_DOCKER=true`: manage and verify Docker runtime.
+- `ENABLE_GPU=true`: install/check NVIDIA stack and run GPU probe.
+
+You can switch modes by editing `/etc/hostops/features.env`.
+
+- Generic Docker app (non-AI): keep `ENABLE_GPU=false`.
+- AI/GPU workload: set `ENABLE_GPU=true`, then rerun bootstrap.
+
 ## Execution Flow
 
 1. `install.sh`
 - Syncs this repository to `/srv/ops/gcloudOps`.
 - Initializes host layout/groups.
+- Initializes feature flags file (if missing).
 - Installs and enables `host-selfheal.service`.
 
 2. `scripts/host-bootstrap.sh`
-- Installs GPU driver (if needed).
-- Installs Docker + Compose (if needed).
-- Installs NVIDIA container toolkit (if needed).
+- Installs Docker + Compose (if `ENABLE_DOCKER=true`).
+- Installs GPU driver + NVIDIA toolkit (if `ENABLE_GPU=true`).
 - Performs runtime verification.
 
 3. `scripts/host-selfheal.sh`
 - Runs on every boot via systemd.
-- Verifies GPU driver, Docker availability, and container GPU probe.
+- Verifies only enabled features (Docker/GPU) based on flags.
 
 ## Host Layout
 
@@ -82,7 +102,7 @@ tmpdir="$(mktemp -d)"
 sudo git clone <REPO_URL> "$tmpdir/gcloudOps"
 sudo bash "$tmpdir/gcloudOps/install.sh"
 
-# Optional heavy bootstrap (driver/docker/toolkit)
+# Optional bootstrap (depends on feature flags)
 sudo bash /srv/ops/gcloudOps/scripts/host-bootstrap.sh
 ```
 
@@ -100,7 +120,7 @@ Expected outcome:
 - layout/groups remain valid,
 - missing dependencies are repaired,
 - already-correct state is kept unchanged,
-- self-heal check passes at boot.
+- self-heal checks pass according to enabled feature flags.
 
 ## Validation Commands
 

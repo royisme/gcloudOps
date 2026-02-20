@@ -8,10 +8,32 @@
 set -euo pipefail
 
 log() { echo "[host-bootstrap] $*"; }
+FEATURE_FILE="/etc/hostops/features.env"
 
 is_package_installed() {
   local pkg="$1"
   dpkg-query -W -f='${Status}\n' "$pkg" 2>/dev/null | grep -q '^install ok installed$'
+}
+
+normalize_bool() {
+  local raw="${1:-}"
+  local fallback="$2"
+  case "${raw,,}" in
+    1|true|yes|on) echo "true" ;;
+    0|false|no|off|"") echo "false" ;;
+    *) echo "$fallback" ;;
+  esac
+}
+
+load_feature_flags() {
+  ENABLE_DOCKER="true"
+  ENABLE_GPU="false"
+  if [ -f "$FEATURE_FILE" ]; then
+    # shellcheck disable=SC1090
+    . "$FEATURE_FILE"
+  fi
+  ENABLE_DOCKER="$(normalize_bool "${ENABLE_DOCKER:-true}" "true")"
+  ENABLE_GPU="$(normalize_bool "${ENABLE_GPU:-false}" "false")"
 }
 
 ensure_dearmored_keyring() {
@@ -38,6 +60,9 @@ write_if_changed() {
   rm -f "$tmp"
 }
 
+load_feature_flags
+log "Feature flags: ENABLE_DOCKER=${ENABLE_DOCKER}, ENABLE_GPU=${ENABLE_GPU}"
+
 log "Updating package index and installing base tools"
 apt-get update -y
 apt-get install -y ca-certificates curl gnupg lsb-release apt-transport-https python3 git
@@ -46,64 +71,88 @@ apt-get install -y ca-certificates curl gnupg lsb-release apt-transport-https py
 . /etc/os-release
 CODENAME="${VERSION_CODENAME:-$(lsb_release -cs || true)}"
 
-## 1. GPU driver installation (only if missing)
-if ! command -v nvidia-smi >/dev/null 2>&1; then
-  log "nvidia-smi not found; installing NVIDIA driver (binary/prod)"
-  mkdir -p /opt/google/cuda-installer
-  cd /opt/google/cuda-installer
-  if [ ! -f cuda_installer.pyz ]; then
-    curl -fsSL "https://storage.googleapis.com/compute-gpu-installation-us/installer/latest/cuda_installer.pyz" -o cuda_installer.pyz
-  fi
-  # Running the installer may trigger a reboot.  If a reboot happens, re-run this script afterwards.
-  python3 cuda_installer.pyz install_driver --installation-mode=binary --installation-branch=prod || true
-  log "If the installer requested a reboot, please reboot now and re-run this script."
-else
-  log "NVIDIA driver already installed.  Skipping driver installation."
-fi
-
-## 2. Docker and compose installation (only if missing)
-if ! command -v docker >/dev/null 2>&1; then
-  log "Docker not found; installing Docker Engine and Compose"
-  install -m 0755 -d /etc/apt/keyrings
-  ensure_dearmored_keyring "https://download.docker.com/linux/debian/gpg" "/etc/apt/keyrings/docker.gpg"
-  write_if_changed "/etc/apt/sources.list.d/docker.list" \
-    "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian ${CODENAME} stable"
-  apt-get update -y
-  apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-  systemctl enable --now docker
-else
-  log "Docker already installed; ensuring service is enabled"
-  systemctl enable --now docker
-fi
-
-## 3. NVIDIA container toolkit (only if missing)
-if ! is_package_installed "nvidia-container-toolkit"; then
-  log "Installing NVIDIA container toolkit"
-  install -m 0755 -d /etc/apt/keyrings
-  ensure_dearmored_keyring "https://nvidia.github.io/libnvidia-container/gpgkey" "/etc/apt/keyrings/nvidia-container-toolkit.gpg"
-  NVIDIA_REPO_LINE="$(
-    curl -fsSL https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list \
-      | sed 's#deb https://#deb [signed-by=/etc/apt/keyrings/nvidia-container-toolkit.gpg] https://#g'
-  )"
-  write_if_changed "/etc/apt/sources.list.d/nvidia-container-toolkit.list" "$NVIDIA_REPO_LINE"
-  apt-get update -y
-  apt-get install -y nvidia-container-toolkit
-  if command -v nvidia-ctk >/dev/null 2>&1; then
-    nvidia-ctk runtime configure --runtime=docker || true
-    systemctl restart docker
+## 1. Docker and compose installation (optional)
+if [ "$ENABLE_DOCKER" = "true" ]; then
+  if ! command -v docker >/dev/null 2>&1; then
+    log "Docker not found; installing Docker Engine and Compose"
+    install -m 0755 -d /etc/apt/keyrings
+    ensure_dearmored_keyring "https://download.docker.com/linux/debian/gpg" "/etc/apt/keyrings/docker.gpg"
+    write_if_changed "/etc/apt/sources.list.d/docker.list" \
+      "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian ${CODENAME} stable"
+    apt-get update -y
+    apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+    systemctl enable --now docker
+  else
+    log "Docker already installed; ensuring service is enabled"
+    systemctl enable --now docker
   fi
 else
-  log "NVIDIA container toolkit already installed."
+  log "ENABLE_DOCKER=false; skipping Docker installation."
 fi
 
-## 4. Verification steps
-if command -v nvidia-smi >/dev/null 2>&1; then
+## 2. GPU driver and NVIDIA runtime installation (optional)
+if [ "$ENABLE_GPU" = "true" ]; then
+  if ! command -v nvidia-smi >/dev/null 2>&1; then
+    log "nvidia-smi not found; installing NVIDIA driver (binary/prod)"
+    mkdir -p /opt/google/cuda-installer
+    cd /opt/google/cuda-installer
+    if [ ! -f cuda_installer.pyz ]; then
+      curl -fsSL "https://storage.googleapis.com/compute-gpu-installation-us/installer/latest/cuda_installer.pyz" -o cuda_installer.pyz
+    fi
+    # Running the installer may trigger a reboot.  If a reboot happens, re-run this script afterwards.
+    python3 cuda_installer.pyz install_driver --installation-mode=binary --installation-branch=prod || true
+    log "If the installer requested a reboot, please reboot now and re-run this script."
+  else
+    log "NVIDIA driver already installed.  Skipping driver installation."
+  fi
+
+  if [ "$ENABLE_DOCKER" = "true" ]; then
+    if ! is_package_installed "nvidia-container-toolkit"; then
+      log "Installing NVIDIA container toolkit"
+      install -m 0755 -d /etc/apt/keyrings
+      ensure_dearmored_keyring "https://nvidia.github.io/libnvidia-container/gpgkey" "/etc/apt/keyrings/nvidia-container-toolkit.gpg"
+      NVIDIA_REPO_LINE="$(
+        curl -fsSL https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list \
+          | sed 's#deb https://#deb [signed-by=/etc/apt/keyrings/nvidia-container-toolkit.gpg] https://#g'
+      )"
+      write_if_changed "/etc/apt/sources.list.d/nvidia-container-toolkit.list" "$NVIDIA_REPO_LINE"
+      apt-get update -y
+      apt-get install -y nvidia-container-toolkit
+      if command -v nvidia-ctk >/dev/null 2>&1; then
+        nvidia-ctk runtime configure --runtime=docker || true
+        systemctl restart docker
+      fi
+    else
+      log "NVIDIA container toolkit already installed."
+    fi
+  else
+    log "ENABLE_GPU=true but ENABLE_DOCKER=false; skipping NVIDIA container toolkit setup."
+  fi
+else
+  log "ENABLE_GPU=false; skipping GPU/NVIDIA setup."
+fi
+
+## 3. Verification steps
+if [ "$ENABLE_DOCKER" = "true" ] && command -v docker >/dev/null 2>&1; then
+  log "Verifying Docker daemon"
+  set +e
+  docker info > /dev/null 2>&1
+  DOCKER_RC=$?
+  set -e
+  if [ $DOCKER_RC -eq 0 ]; then
+    log "Docker daemon is reachable."
+  else
+    log "Docker daemon check failed."
+  fi
+fi
+
+if [ "$ENABLE_GPU" = "true" ] && command -v nvidia-smi >/dev/null 2>&1; then
   log "Verifying host GPU driver"
   nvidia-smi || true
 fi
 
-log "Verifying Docker access to GPU"
-if command -v docker >/dev/null 2>&1; then
+if [ "$ENABLE_GPU" = "true" ] && [ "$ENABLE_DOCKER" = "true" ] && command -v docker >/dev/null 2>&1; then
+  log "Verifying Docker access to GPU"
   set +e
   docker run --rm --gpus all nvidia/cuda:12.4.1-base-ubuntu22.04 nvidia-smi > /dev/null 2>&1
   RC=$?
@@ -115,4 +164,4 @@ if command -v docker >/dev/null 2>&1; then
   fi
 fi
 
-log "Bootstrap completed.  If you installed the driver, a reboot may be required."
+log "Bootstrap completed."

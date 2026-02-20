@@ -39,6 +39,13 @@ fi
 echo "[install] Initialising host directory layout and groups"
 bash "$DEST_ROOT/scripts/host-layout-init.sh"
 
+# Install default feature flags if missing
+mkdir -p /etc/hostops
+if [ ! -f /etc/hostops/features.env ]; then
+  install -m 0644 "$DEST_ROOT/scripts/host-features.env.example" /etc/hostops/features.env
+  echo "[install] Created /etc/hostops/features.env (default: Docker enabled, GPU disabled)"
+fi
+
 # Install the systemd unit for the host self‑heal service
 echo "[install] Installing host self‑heal service"
 install -m 0644 "$DEST_ROOT/scripts/systemd/host-selfheal.service" /etc/systemd/system/
