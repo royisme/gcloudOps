@@ -13,8 +13,46 @@ DEST_ROOT="/srv/ops/${REPO_NAME}"
 INSTALL_MODE="${GCLOUDOPS_INSTALL_MODE:-auto}"   # auto|local|git
 GCLOUDOPS_REF="${GCLOUDOPS_REF:-main}"           # branch/tag/commit
 GCLOUDOPS_REPO_URL="${GCLOUDOPS_REPO_URL:-}"
+GCLOUDOPS_OWNER="${GCLOUDOPS_OWNER:-${SUDO_USER:-}}"
+GCLOUDOPS_GROUP="${GCLOUDOPS_GROUP:-}"
 
 log() { echo "[install] $*"; }
+
+resolve_owner_group() {
+  local fallback_owner
+  local fallback_group
+
+  fallback_owner="$(stat -c '%U' /srv/ops 2>/dev/null || true)"
+  fallback_group="$(stat -c '%G' /srv/ops 2>/dev/null || true)"
+
+  if [ -z "$GCLOUDOPS_OWNER" ] || ! id -u "$GCLOUDOPS_OWNER" >/dev/null 2>&1; then
+    if [ -n "$fallback_owner" ] && [ "$fallback_owner" != "root" ] && id -u "$fallback_owner" >/dev/null 2>&1; then
+      GCLOUDOPS_OWNER="$fallback_owner"
+    else
+      GCLOUDOPS_OWNER="root"
+    fi
+  fi
+
+  if [ -z "$GCLOUDOPS_GROUP" ] || ! getent group "$GCLOUDOPS_GROUP" >/dev/null 2>&1; then
+    if [ -n "$fallback_group" ] && [ "$fallback_group" != "root" ] && getent group "$fallback_group" >/dev/null 2>&1; then
+      GCLOUDOPS_GROUP="$fallback_group"
+    else
+      GCLOUDOPS_GROUP="$GCLOUDOPS_OWNER"
+    fi
+  fi
+}
+
+run_as_owner() {
+  if [ "$GCLOUDOPS_OWNER" = "root" ]; then
+    "$@"
+    return 0
+  fi
+  if command -v runuser >/dev/null 2>&1; then
+    runuser -u "$GCLOUDOPS_OWNER" -- "$@"
+  else
+    sudo -u "$GCLOUDOPS_OWNER" "$@"
+  fi
+}
 
 resolve_repo_url_from_source() {
   if [ -n "$GCLOUDOPS_REPO_URL" ]; then
@@ -66,29 +104,35 @@ sync_repo_git() {
   fi
 
   if [ ! -d "$DEST_ROOT" ]; then
-    git clone "$repo_url" "$DEST_ROOT"
+    mkdir -p "$(dirname "$DEST_ROOT")"
+    if [ "$GCLOUDOPS_OWNER" != "root" ]; then
+      install -d -m 2775 -o "$GCLOUDOPS_OWNER" -g "$GCLOUDOPS_GROUP" "$DEST_ROOT"
+      run_as_owner git clone "$repo_url" "$DEST_ROOT"
+    else
+      git clone "$repo_url" "$DEST_ROOT"
+    fi
   elif [ ! -d "$DEST_ROOT/.git" ]; then
     log "Destination exists but is not a git repo: ${DEST_ROOT}"
     log "Refusing to overwrite. Move it away or use GCLOUDOPS_INSTALL_MODE=local."
     exit 1
   fi
 
-  git -C "$DEST_ROOT" remote set-url origin "$repo_url"
+  run_as_owner git -C "$DEST_ROOT" remote set-url origin "$repo_url"
 
-  if [ -n "$(git -C "$DEST_ROOT" status --porcelain)" ]; then
+  if [ -n "$(run_as_owner git -C "$DEST_ROOT" status --porcelain)" ]; then
     log "Destination repo has uncommitted changes: ${DEST_ROOT}"
     log "Refusing auto-update to avoid losing local edits."
     exit 1
   fi
 
-  git -C "$DEST_ROOT" fetch --tags origin
-  if git -C "$DEST_ROOT" show-ref --verify --quiet "refs/heads/${GCLOUDOPS_REF}"; then
-    git -C "$DEST_ROOT" checkout "${GCLOUDOPS_REF}"
-    git -C "$DEST_ROOT" pull --ff-only origin "${GCLOUDOPS_REF}"
-  elif git -C "$DEST_ROOT" show-ref --verify --quiet "refs/remotes/origin/${GCLOUDOPS_REF}"; then
-    git -C "$DEST_ROOT" checkout -B "${GCLOUDOPS_REF}" "origin/${GCLOUDOPS_REF}"
-  elif git -C "$DEST_ROOT" rev-parse --verify --quiet "${GCLOUDOPS_REF}^{commit}" >/dev/null; then
-    git -C "$DEST_ROOT" checkout --detach "${GCLOUDOPS_REF}"
+  run_as_owner git -C "$DEST_ROOT" fetch --tags origin
+  if run_as_owner git -C "$DEST_ROOT" show-ref --verify --quiet "refs/heads/${GCLOUDOPS_REF}"; then
+    run_as_owner git -C "$DEST_ROOT" checkout "${GCLOUDOPS_REF}"
+    run_as_owner git -C "$DEST_ROOT" pull --ff-only origin "${GCLOUDOPS_REF}"
+  elif run_as_owner git -C "$DEST_ROOT" show-ref --verify --quiet "refs/remotes/origin/${GCLOUDOPS_REF}"; then
+    run_as_owner git -C "$DEST_ROOT" checkout -B "${GCLOUDOPS_REF}" "origin/${GCLOUDOPS_REF}"
+  elif run_as_owner git -C "$DEST_ROOT" rev-parse --verify --quiet "${GCLOUDOPS_REF}^{commit}" >/dev/null; then
+    run_as_owner git -C "$DEST_ROOT" checkout --detach "${GCLOUDOPS_REF}"
   else
     log "Requested ref not found: ${GCLOUDOPS_REF}"
     exit 1
@@ -99,6 +143,8 @@ log "Installing ${REPO_NAME} into ${DEST_ROOT}"
 
 # Ensure the parent directory exists
 mkdir -p /srv/ops
+resolve_owner_group
+log "Repository owner/group target: ${GCLOUDOPS_OWNER}:${GCLOUDOPS_GROUP}"
 
 REPO_URL="$(resolve_repo_url_from_source)"
 case "$INSTALL_MODE" in
@@ -120,6 +166,8 @@ case "$INSTALL_MODE" in
     exit 1
     ;;
 esac
+
+chown -R "${GCLOUDOPS_OWNER}:${GCLOUDOPS_GROUP}" "$DEST_ROOT"
 
 if [ ! -f "$DEST_ROOT/scripts/host-layout-init.sh" ]; then
   log "Missing expected script in destination: $DEST_ROOT/scripts/host-layout-init.sh"
