@@ -68,6 +68,12 @@ sudo bash /srv/ops/gcloudOps/scripts/host-features-doctor.sh
 ```
 This prints effective feature flags, key runtime status, and suggested next steps.
 
+Service hook scaffold:
+```bash
+bash scripts/new-service-hook.sh --name myapp --index 20
+```
+This generates an executable hook template in `services-enabled/`.
+
 ## Service Self-Heal Extension
 
 You can plug service-specific self-heal scripts into the host self-heal pipeline.
@@ -179,6 +185,8 @@ bash -n scripts/host-selfheal.sh
 - Added `scripts/host-features.env.example` and auto-initialize `/etc/hostops/features.env` on install.
 - Updated `host-bootstrap.sh` and `host-selfheal.sh` to execute checks by enabled features only.
 - Added `scripts/host-features-doctor.sh` for quick on-host diagnostics and next-step hints.
+- Added `scripts/new-service-hook.sh` scaffold for service self-heal hook generation.
+- Added repository-level `AGENTS.md` guidance for coding agents (Codex/Claude Code).
 - Completed live validation on VM `instance-20260220-062618`:
   - Generic mode (`ENABLE_GPU=false`) self-heal passes.
   - GPU mode (`ENABLE_GPU=true`) bootstrap + self-heal pass.
