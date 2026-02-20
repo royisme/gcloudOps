@@ -9,6 +9,11 @@ set -euo pipefail
 
 log() { echo "[host-bootstrap] $*"; }
 
+is_package_installed() {
+  local pkg="$1"
+  dpkg-query -W -f='${Status}\n' "$pkg" 2>/dev/null | grep -q '^install ok installed$'
+}
+
 ensure_dearmored_keyring() {
   local key_url="$1"
   local keyring_path="$2"
@@ -72,7 +77,7 @@ else
 fi
 
 ## 3. NVIDIA container toolkit (only if missing)
-if ! dpkg -l 2>/dev/null | grep -qE '^ii\s+nvidia-container-toolkit\s'; then
+if ! is_package_installed "nvidia-container-toolkit"; then
   log "Installing NVIDIA container toolkit"
   install -m 0755 -d /etc/apt/keyrings
   ensure_dearmored_keyring "https://nvidia.github.io/libnvidia-container/gpgkey" "/etc/apt/keyrings/nvidia-container-toolkit.gpg"

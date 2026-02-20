@@ -11,6 +11,11 @@ LOG_FILE="/var/log/svcs/host-selfheal.log"
 mkdir -p "$(dirname "$LOG_FILE")"
 log() { echo "[$(date -Is)] $*" | tee -a "$LOG_FILE"; }
 
+is_package_installed() {
+  local pkg="$1"
+  dpkg-query -W -f='${Status}\n' "$pkg" 2>/dev/null | grep -q '^install ok installed$'
+}
+
 log "Starting host self‑heal check"
 
 # Ensure the host layout has been initialised
@@ -43,7 +48,7 @@ fi
 log "Docker service is present"
 
 # Check for NVIDIA container toolkit
-if ! dpkg -l 2>/dev/null | grep -qE '^ii\s+nvidia-container-toolkit\s'; then
+if ! is_package_installed "nvidia-container-toolkit"; then
   log "nvidia-container-toolkit not installed.  Run host-bootstrap.sh to install it."
   exit 5
 fi
