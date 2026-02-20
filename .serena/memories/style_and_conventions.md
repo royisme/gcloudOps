@@ -1,5 +1,0 @@
-- Language: Bash.
-- Safety flags: scripts consistently use `set -euo pipefail`.
-- Style: small helper functions for repeated logic (`log`, etc.), explicit guard checks before installs.
-- Behavior expectation: scripts should be idempotent and safe to rerun after VM recycle with persistent disk.
-- Service integration: systemd oneshot service for boot-time checks.
