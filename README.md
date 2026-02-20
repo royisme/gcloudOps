@@ -137,6 +137,23 @@ bash -n scripts/host-bootstrap.sh
 bash -n scripts/host-selfheal.sh
 ```
 
+## Changelog
+
+### 2026-02-20
+
+- Added idempotent repo sync behavior in `install.sh` when `/srv/ops/gcloudOps` already exists.
+- Hardened bootstrap repository/keyring writes to be safe on repeated runs.
+- Fixed NVIDIA toolkit detection using `dpkg-query` (removed false negatives from regex mismatch).
+- Introduced feature flags for generic vs GPU hosts:
+  - `ENABLE_DOCKER=true`
+  - `ENABLE_GPU=false` (default)
+- Added `scripts/host-features.env.example` and auto-initialize `/etc/hostops/features.env` on install.
+- Updated `host-bootstrap.sh` and `host-selfheal.sh` to execute checks by enabled features only.
+- Added `scripts/host-features-doctor.sh` for quick on-host diagnostics and next-step hints.
+- Completed live validation on VM `instance-20260220-062618`:
+  - Generic mode (`ENABLE_GPU=false`) self-heal passes.
+  - GPU mode (`ENABLE_GPU=true`) bootstrap + self-heal pass.
+
 ## Operational Highlights (Portfolio-Friendly)
 
 - Production-minded shell automation for host lifecycle management.
